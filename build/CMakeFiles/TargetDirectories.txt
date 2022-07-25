@@ -1,3 +1,0 @@
-/home/denis/Desktop/raycaster/build/CMakeFiles/raycaster.dir
-/home/denis/Desktop/raycaster/build/CMakeFiles/edit_cache.dir
-/home/denis/Desktop/raycaster/build/CMakeFiles/rebuild_cache.dir
