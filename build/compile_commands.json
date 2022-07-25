@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/denis/Desktop/raycaster/build",
+  "command": "/usr/bin/g++  -I/home/denis/Desktop/raycaster/include -g -o CMakeFiles/raycaster.dir/src/main.cpp.o -c /home/denis/Desktop/raycaster/src/main.cpp",
+  "file": "/home/denis/Desktop/raycaster/src/main.cpp"
+}
+]
