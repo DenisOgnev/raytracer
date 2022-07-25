@@ -92,6 +92,10 @@ raycaster_EXTERNAL_OBJECTS =
 
 raycaster: CMakeFiles/raycaster.dir/src/main.cpp.o
 raycaster: CMakeFiles/raycaster.dir/build.make
+raycaster: /usr/lib/x86_64-linux-gnu/libsfml-graphics.so.2.5.1
+raycaster: /usr/lib/x86_64-linux-gnu/libsfml-audio.so.2.5.1
+raycaster: /usr/lib/x86_64-linux-gnu/libsfml-window.so.2.5.1
+raycaster: /usr/lib/x86_64-linux-gnu/libsfml-system.so.2.5.1
 raycaster: CMakeFiles/raycaster.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/denis/Desktop/raycaster/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable raycaster"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/raycaster.dir/link.txt --verbose=$(VERBOSE)
