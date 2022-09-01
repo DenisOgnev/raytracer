@@ -1,15 +1,32 @@
 #include <SFML/Graphics.hpp>
 
 const std::string WINDOW_NAME = "Test";
-const unsigned int WIDTH = 500;
-const unsigned int HEIGHT = 500;
+const uint32_t WIDTH = 500;
+const uint32_t HEIGHT = 500;
+const sf::Vector2u WINDOW_SIZE(WIDTH, HEIGHT);
 
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode(sf::Vector2u(WIDTH, HEIGHT)), WINDOW_NAME);
+    sf::RenderWindow window(sf::VideoMode(WINDOW_SIZE), WINDOW_NAME);
 
-    sf::CircleShape shape(100.f);
-    shape.setFillColor(sf::Color::Green);
+    sf::Uint8* pixels = new sf::Uint8[WIDTH * HEIGHT * 4];
+    sf::Texture texture;
+    if (!texture.create(WINDOW_SIZE))
+    {
+        throw std::runtime_error("Failed to create texture.");
+    }
+    sf::Sprite sprite(texture);
+
+    for (size_t i = 0; i < WIDTH * HEIGHT * 4; i+=4)
+    {
+        pixels[i] = 100;
+        pixels[i + 1] = 100;
+        pixels[i + 2] = 100;
+        pixels[i + 3] = 255;
+    }
+
+    texture.update(pixels);
+    
 
     while (window.isOpen())
     {
@@ -21,7 +38,7 @@ int main()
         }
 
         window.clear();
-        window.draw(shape);
+        window.draw(sprite);
         window.display();
     }
 
