@@ -17,7 +17,30 @@ struct Sphere
     sf::Color color;
 };
 
-const std::vector<Sphere> spheres{{glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Blue}};
+struct Light
+{
+    enum Type
+    {
+        AMBIENT, POINT, DIRECTIONAL
+    };
+
+    Type type;
+    float intensity;
+    glm::vec3 position;
+};
+
+const std::vector<Sphere> spheres
+{
+    {glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Red},
+    {glm::vec3(2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Blue},
+    {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green}
+};
+const std::vector<Light> lights
+{
+    {Light::AMBIENT, 0.2f},
+    {Light::POINT, 0.6f, glm::vec3(2.0f, 1.0f, 0.0f)},
+    {Light::DIRECTIONAL, 0.2f, glm::vec3(1.0f, 4.0f, 4.0f)}
+};
 
 
 void put_pixel_start_from_zero(sf::Uint8* pixels, uint32_t x, uint32_t y, sf::Color color)
@@ -60,13 +83,13 @@ void fill(sf::Uint8* pixels, sf::Color color)
 
 std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
 {
-    glm::vec3 C = sphere.center;
-    float r = sphere.radius;
-    glm::vec3 OC = camera_pos - C;
+    glm::vec3 center = sphere.center;
+    float radius = sphere.radius;
+    glm::vec3 OC = camera_pos - center;
 
     float k1 = glm::dot(direction, direction);
     float k2 = 2 * glm::dot(OC, direction);
-    float k3 = glm::dot(OC, OC) - r * r;
+    float k3 = glm::dot(OC, OC) - radius * radius;
 
     float discriminant = k2 * k2 - 4 * k1 * k3;
     if (discriminant < 0)
@@ -120,32 +143,28 @@ int main()
     }
     sf::Sprite sprite(texture);
 
-    fill(pixels, sf::Color::Black);
-    put_pixel(pixels, 249, 249, sf::Color::White);
-
-    texture.update(pixels);
-
 
     glm::vec3 camera_pos(0.0f, 0.0f, 0.0f);
     uint32_t viewport_width = 1;
     uint32_t viewport_height = 1;
     uint32_t plane_distance = 1;
-
-    for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
-    {
-        for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
-        {
-            glm::vec3 direction(x * (viewport_width / static_cast<double>(WIDTH)), y * (viewport_height / static_cast<double>(HEIGHT)), plane_distance);
-            sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity());
-            put_pixel(pixels, x, y, result_color);
-        }
-    }
-    
-    texture.update(pixels);
     
 
     while (window.isOpen())
     {
+        for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
+        {
+            for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
+            {
+                glm::vec3 direction(x * (viewport_width / static_cast<double>(WIDTH)), y * (viewport_height / static_cast<double>(HEIGHT)), plane_distance);
+                sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity());
+                put_pixel(pixels, x, y, result_color);
+            }
+        }
+        
+        texture.update(pixels);
+
+
         sf::Event event;
         while (window.pollEvent(event))
         {
