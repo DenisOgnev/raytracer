@@ -1,11 +1,12 @@
+#include <iostream>
 #include <SFML/Graphics.hpp>
 
 const std::string WINDOW_NAME = "Test";
-const uint32_t WIDTH = 500;
-const uint32_t HEIGHT = 500;
+const int32_t WIDTH = 500;
+const int32_t HEIGHT = 500;
 const sf::Vector2u WINDOW_SIZE(WIDTH, HEIGHT);
 
-void put_pixel(sf::Uint8* pixels, uint32_t x, uint32_t y, sf::Color color)
+void put_pixel_start_from_zero(sf::Uint8* pixels, uint32_t x, uint32_t y, sf::Color color)
 {
     if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT)
     {
@@ -15,6 +16,21 @@ void put_pixel(sf::Uint8* pixels, uint32_t x, uint32_t y, sf::Color color)
     pixels[y * (WIDTH * 4) + (x * 4) + 1] = color.g;
     pixels[y * (WIDTH * 4) + (x * 4) + 2] = color.b;
     pixels[y * (WIDTH * 4) + (x * 4) + 3] = 255;
+}
+
+void put_pixel(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
+{
+    if (x > (WIDTH - 1) / 2 || x < -WIDTH / 2 || y > (HEIGHT - 1) / 2 || y < -HEIGHT / 2)
+    {
+        throw std::runtime_error("Failed to put pixel.");
+    }
+    uint32_t fixed_x = WIDTH / 2 + x;
+    uint32_t fixed_y = (HEIGHT + 1) / 2 - (y + 1);
+    
+    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4)] = color.r;
+    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 1] = color.g;
+    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 2] = color.b;
+    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 3] = 255;
 }
 
 void fill(sf::Uint8* pixels, sf::Color color)
@@ -41,7 +57,7 @@ int main()
     sf::Sprite sprite(texture);
 
     fill(pixels, sf::Color::Black);
-    put_pixel(pixels, 499, 499, sf::Color::White);
+    put_pixel(pixels, 249, 249, sf::Color::White);
 
     texture.update(pixels);
     
