@@ -27,19 +27,21 @@ struct Light
     Type type;
     float intensity;
     glm::vec3 position;
+    glm::vec3 direction;
 };
 
-const std::vector<Sphere> spheres
+std::vector<Sphere> spheres
 {
     {glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Red},
     {glm::vec3(2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Blue},
-    {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green}
+    {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green},
+    {glm::vec3(0.0f, -5001.0f, 0.0f), 5000.0f, sf::Color::Yellow}
 };
 const std::vector<Light> lights
 {
-    {Light::AMBIENT, 0.2f},
-    {Light::POINT, 0.6f, glm::vec3(2.0f, 1.0f, 0.0f)},
-    {Light::DIRECTIONAL, 0.2f, glm::vec3(1.0f, 4.0f, 4.0f)}
+    {Light::AMBIENT, 0.2f, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f)},
+    {Light::POINT, 0.6f, glm::vec3(2.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f)},
+    {Light::DIRECTIONAL, 0.2f, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 4.0f, 4.0f)}
 };
 
 
@@ -79,6 +81,36 @@ void fill(sf::Uint8* pixels, sf::Color color)
         pixels[i + 2] = color.b;
         pixels[i + 3] = 255;
     }
+}
+
+float compute_lighting(glm::vec3 point, glm::vec3 normal)
+{
+    float i = 0.0f;
+    for (const auto &light : lights)
+    {
+        if (light.type == Light::AMBIENT)
+        {
+            i += light.intensity;
+        }
+        else
+        {
+            glm::vec3 light_vector;
+            if (light.type == Light::POINT)
+            {
+                light_vector = light.position - point;
+            }
+            else if (light.type == Light::DIRECTIONAL)
+            {
+                light_vector = light.direction;
+            }
+            float n_dot_l = glm::dot(normal, light_vector);
+            if (n_dot_l > 0.0f)
+            {
+                i += light.intensity * n_dot_l / (glm::length(normal) * glm::length(light_vector));
+            }
+        }
+    }
+    return i;
 }
 
 std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
@@ -127,7 +159,18 @@ sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, floa
         return sf::Color::White;
     }
 
-    return closest_sphere.value().color;
+    glm::vec3 point = camera_pos + closest_t * direction;
+    glm::vec3 normal = (point - closest_sphere.value().center);
+    normal = glm::normalize(normal);
+    float lighting = compute_lighting(point, normal);
+
+    sf::Color t_color = closest_sphere.value().color;
+    sf::Color result_color;
+    result_color.r = static_cast<int>(t_color.r * lighting);
+    result_color.g = static_cast<int>(t_color.g * lighting);
+    result_color.b = static_cast<int>(t_color.b * lighting);
+
+    return result_color;
 }
 
 
