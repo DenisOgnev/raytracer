@@ -1,5 +1,6 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
+#include <glm/glm.hpp>
 
 const std::string WINDOW_NAME = "Test";
 const int32_t WIDTH = 500;
@@ -55,6 +56,8 @@ int main()
         throw std::runtime_error("Failed to create texture.");
     }
     sf::Sprite sprite(texture);
+
+    glm::vec3 pos(1.0f, 1.0f, 1.0f);
 
     fill(pixels, sf::Color::Black);
     put_pixel(pixels, 249, 249, sf::Color::White);
