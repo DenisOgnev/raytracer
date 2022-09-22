@@ -30,14 +30,14 @@ struct Light
     glm::vec3 direction;
 };
 
-std::vector<Sphere> spheres
+const std::vector<Sphere> Spheres
 {
     {glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Red},
     {glm::vec3(2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Blue},
     {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green},
     {glm::vec3(0.0f, -5001.0f, 0.0f), 5000.0f, sf::Color::Yellow}
 };
-const std::vector<Light> lights
+const std::vector<Light> Lights
 {
     {Light::AMBIENT, 0.2f, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f)},
     {Light::POINT, 0.6f, glm::vec3(2.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f)},
@@ -86,7 +86,7 @@ void fill(sf::Uint8* pixels, sf::Color color)
 float compute_lighting(glm::vec3 point, glm::vec3 normal)
 {
     float i = 0.0f;
-    for (const auto &light : lights)
+    for (const auto &light : Lights)
     {
         if (light.type == Light::AMBIENT)
         {
@@ -139,7 +139,7 @@ sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, floa
 {
     float closest_t = std::numeric_limits<float>::infinity();
     std::optional<Sphere> closest_sphere;
-    for (const auto& sphere : spheres)
+    for (const auto& sphere : Spheres)
     {
         float t1, t2;
         std::tie(t1, t2) = intersect_ray_sphere(camera_pos, direction, sphere);
