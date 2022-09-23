@@ -5,11 +5,13 @@
 #include <limits>
 #include <vector>
 #include <optional>
+#include <memory>
 
-const std::string WINDOW_NAME = "Test";
+
+const std::string WINDOW_NAME = "Raytracer";
 const int32_t WIDTH = 500;
 const int32_t HEIGHT = 500;
-const sf::Vector2u WINDOW_SIZE(WIDTH, HEIGHT);
+
 
 struct Sphere
 {
@@ -19,6 +21,7 @@ struct Sphere
     int specular;
     float reflective;
 };
+
 
 struct Light
 {
@@ -32,6 +35,7 @@ struct Light
     glm::vec3 position;
     glm::vec3 direction;
 };
+
 
 const std::vector<Sphere> Spheres
 {
@@ -48,208 +52,41 @@ const std::vector<Light> Lights
 };
 
 
-void put_pixel_start_from_zero(sf::Uint8* pixels, uint32_t x, uint32_t y, sf::Color color)
+class RaytracerApp
 {
-    if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT)
+public:
+    RaytracerApp(std::string window_name, int32_t width, int32_t height) : WINDOW_NAME(window_name), WIDTH(width), HEIGHT(height), WINDOW_SIZE(sf::Vector2u(WIDTH, HEIGHT)), window(sf::RenderWindow(sf::VideoMode(WINDOW_SIZE), WINDOW_NAME)) 
     {
-        throw std::runtime_error("Failed to put pixel.");
-    }
-    pixels[y * (WIDTH * 4) + (x * 4)] = color.r;
-    pixels[y * (WIDTH * 4) + (x * 4) + 1] = color.g;
-    pixels[y * (WIDTH * 4) + (x * 4) + 2] = color.b;
-    pixels[y * (WIDTH * 4) + (x * 4) + 3] = 255;
-}
-
-void put_pixel(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
-{
-    if (x > (WIDTH - 1) / 2 || x < -WIDTH / 2 || y > (HEIGHT - 1) / 2 || y < -HEIGHT / 2)
-    {
-        throw std::runtime_error("Failed to put pixel.");
-    }
-    uint32_t fixed_x = WIDTH / 2 + x;
-    uint32_t fixed_y = (HEIGHT + 1) / 2 - (y + 1);
-    
-    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4)] = color.r;
-    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 1] = color.g;
-    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 2] = color.b;
-    pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 3] = 255;
-}
-
-void fill(sf::Uint8* pixels, sf::Color color)
-{
-    for (size_t i = 0; i < WIDTH * HEIGHT * 4; i+=4)
-    {
-        pixels[i] = color.r;
-        pixels[i + 1] = color.g;
-        pixels[i + 2] = color.b;
-        pixels[i + 3] = 255;
-    }
-}
-
-int clamp(int value, int lowest, int highest)
-{
-    if (value > highest)
-    {
-        return highest;
-    }
-    if (value < lowest)
-    {
-        return lowest;
-    }
-    return value;
-}
-
-glm::vec3 reflect_ray(glm::vec3 ray, glm::vec3 normal)
-{
-    return 2.0f * normal * glm::dot(normal, ray) - ray;
-}
-
-std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
-{
-    glm::vec3 center = sphere.center;
-    float radius = sphere.radius;
-    glm::vec3 OC = camera_pos - center;
-
-    float k1 = glm::dot(direction, direction);
-    float k2 = 2 * glm::dot(OC, direction);
-    float k3 = glm::dot(OC, OC) - radius * radius;
-
-    float discriminant = k2 * k2 - 4 * k1 * k3;
-    if (discriminant < 0)
-    {
-        return std::make_tuple(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity());
+        pixels = new sf::Uint8[WIDTH * HEIGHT * 4];
+        if (!texture.create(WINDOW_SIZE))
+            throw std::runtime_error("Failed to create texture.");
+        sprite = sf::Sprite(texture);
     }
 
-    float t1 = (-k2 + std::sqrtf(discriminant)) / (2 * k1);
-    float t2 = (-k2 - std::sqrtf(discriminant)) / (2 * k1);
 
-    return std::make_tuple(t1, t2);
-}
-
-std::tuple<std::optional<Sphere>, float> closest_intersection(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max)
-{
-    float closest_t = std::numeric_limits<float>::infinity();
-    std::optional<Sphere> closest_sphere;
-    for (const auto& sphere : Spheres)
+    void run()
     {
-        float t1, t2;
-        std::tie(t1, t2) = intersect_ray_sphere(camera_pos, direction, sphere);
-        if (t1 > t_min && t1 < t_max && t1 < closest_t)
-        {
-            closest_t = t1;
-            closest_sphere = sphere;
-        }
-        if (t2 > t_min && t2 < t_max && t2 < closest_t)
-        {
-            closest_t = t2;
-            closest_sphere = sphere;
-        }
-    }
-    return std::make_tuple(closest_sphere, closest_t);
-}
-
-float compute_lighting(glm::vec3 point, glm::vec3 normal, glm::vec3 view, int specular)
-{
-    float i = 0.0f;
-    for (const auto &light : Lights)
-    {
-        if (light.type == Light::AMBIENT)
-        {
-            i += light.intensity;
-        }
-        else
-        {
-            glm::vec3 light_vector;
-            float t_min = 0.01f, t_max;
-            if (light.type == Light::POINT)
-            {
-                light_vector = light.position - point;
-                t_max = 1;
-            }
-            else if (light.type == Light::DIRECTIONAL)
-            {
-                light_vector = light.direction;
-                t_max = std::numeric_limits<float>::infinity();
-            }
-
-            float shadow_t;
-            std::optional<Sphere> shadow_sphere;
-            std::tie(shadow_sphere, shadow_t) = closest_intersection(point, light_vector, t_min, t_max);
-            if (shadow_sphere.has_value())
-            {
-                continue;
-            }
-
-            float n_dot_l = glm::dot(normal, light_vector);
-            if (n_dot_l > 0.0f)
-            {
-                i += light.intensity * n_dot_l / (glm::length(normal) * glm::length(light_vector));
-            }
-
-            if (specular != -1)
-            {
-                glm::vec3 R = reflect_ray(light_vector, normal);
-                float r_dot_v = glm::dot(R, view);
-                if (r_dot_v > 0.0f)
-                    i += light.intensity * std::powf((r_dot_v / (glm::length(R) * glm::length(view))), static_cast<float>(specular));
-            }
-        }
-    }
-    return i;
-}
-
-sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max, int recursion_depth)
-{
-    float closest_t;
-    std::optional<Sphere> closest_sphere;
-    std::tie(closest_sphere, closest_t) = closest_intersection(camera_pos, direction, t_min, t_max);
-    if (!closest_sphere)
-    {
-        return sf::Color::Black;
+        main_loop();
     }
 
-    glm::vec3 point = camera_pos + closest_t * direction;
-    glm::vec3 normal = point - closest_sphere.value().center;
-    normal = glm::normalize(normal);
-    float lighting = compute_lighting(point, normal, -direction, closest_sphere.value().specular);
-
-    sf::Color t_color = closest_sphere.value().color;
-    sf::Color local_color;
-    local_color.r = clamp(static_cast<int>(static_cast<float>(t_color.r) * lighting), 0, 255);
-    local_color.g = clamp(static_cast<int>(static_cast<float>(t_color.g) * lighting), 0, 255);
-    local_color.b = clamp(static_cast<int>(static_cast<float>(t_color.b) * lighting), 0, 255);
-
-    float reflective = closest_sphere.value().reflective;
-    if (recursion_depth <= 0 || reflective <= 0.0f)
+    ~RaytracerApp()
     {
-        return local_color;
+        delete [] pixels;
     }
 
-    glm::vec3 reflected_direction = reflect_ray(-direction, normal);
-    sf::Color reflected_color = trace_ray(point, reflected_direction, 0.1f, std::numeric_limits<float>::infinity(), recursion_depth - 1);
-    sf::Color result_color;
-    result_color.r = clamp(static_cast<int>(static_cast<float>(local_color.r) * (1.0f - reflective) + static_cast<float>(reflected_color.r) * reflective), 0, 255);
-    result_color.g = clamp(static_cast<int>(static_cast<float>(local_color.g) * (1.0f - reflective) + static_cast<float>(reflected_color.g) * reflective), 0, 255);
-    result_color.b = clamp(static_cast<int>(static_cast<float>(local_color.b) * (1.0f - reflective) + static_cast<float>(reflected_color.b) * reflective), 0, 255);
 
-    return result_color;
-}
+private:
+    const std::string WINDOW_NAME;
+    const int32_t WIDTH;
+    const int32_t HEIGHT;
+    const sf::Vector2u WINDOW_SIZE;
+    sf::RenderWindow window;
 
-
-int main()
-{
-    sf::RenderWindow window(sf::VideoMode(WINDOW_SIZE), WINDOW_NAME);
-
-    sf::Uint8* pixels = new sf::Uint8[WIDTH * HEIGHT * 4];
+    sf::Uint8* pixels;
     sf::Texture texture;
-    if (!texture.create(WINDOW_SIZE))
-    {
-        throw std::runtime_error("Failed to create texture.");
-    }
-    sf::Sprite sprite(texture);
+    sf::Sprite sprite;
 
-
-    glm::vec3 camera_pos(0.0f, 0.0f, 0.0f);
+    glm::vec3 camera_pos = glm::vec3(0.0f, 0.0f, 0.0f);
     float viewport_width = 1;
     float viewport_height = 1;
     float plane_distance = 1;
@@ -258,44 +95,258 @@ int main()
 
     sf::Clock clock;
 
-    while (window.isOpen())
+
+    void main_loop()
     {
-        float current_time = clock.restart().asSeconds();
-        //float fps = 1.0f / (current_time);
-
-        std::cout << current_time << "\n";
-
-        for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
+        while (window.isOpen())
         {
-            for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
+            float current_time = clock.restart().asSeconds();
+            float fps = 1.0f / (current_time);
+
+            std::cout << current_time << "\n";
+
+            for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
             {
-                glm::vec3 direction(x * (viewport_width / static_cast<float>(WIDTH)), y * (viewport_height / static_cast<float>(HEIGHT)), plane_distance);
-                sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity(), recursion_depth);
-                put_pixel(pixels, x, y, result_color);
+                for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
+                {
+                    glm::vec3 direction(x * (viewport_width / static_cast<float>(WIDTH)), y * (viewport_height / static_cast<float>(HEIGHT)), plane_distance);
+                    sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity(), recursion_depth);
+                    put_pixel(pixels, x, y, result_color);
+                }
+            }
+            
+            texture.update(pixels);
+
+
+            sf::Event event;
+            while (window.pollEvent(event))
+            {
+                if (event.type == sf::Event::Closed)
+                    window.close();
+                if (event.type == sf::Event::KeyPressed)
+                {
+                    if (event.key.code == sf::Keyboard::Escape)
+                    {
+                        window.close();
+                    }
+                }
+            }
+
+            window.clear();
+            window.draw(sprite);
+            window.display();
+        }
+    }
+
+
+    void put_pixel_start_from_zero(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
+    {
+        if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT)
+        {
+            throw std::runtime_error("Failed to put pixel.");
+        }
+        pixels[y * (WIDTH * 4) + (x * 4)] = color.r;
+        pixels[y * (WIDTH * 4) + (x * 4) + 1] = color.g;
+        pixels[y * (WIDTH * 4) + (x * 4) + 2] = color.b;
+        pixels[y * (WIDTH * 4) + (x * 4) + 3] = 255;
+    }
+
+
+    void put_pixel(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
+    {
+        if (x > (WIDTH - 1) / 2 || x < -WIDTH / 2 || y > (HEIGHT - 1) / 2 || y < -HEIGHT / 2)
+        {
+            throw std::runtime_error("Failed to put pixel.");
+        }
+        uint32_t fixed_x = WIDTH / 2 + x;
+        uint32_t fixed_y = (HEIGHT + 1) / 2 - (y + 1);
+        
+        pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4)] = color.r;
+        pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 1] = color.g;
+        pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 2] = color.b;
+        pixels[fixed_y * (WIDTH * 4) + (fixed_x * 4) + 3] = 255;
+    }
+
+
+    void fill(sf::Uint8* pixels, sf::Color color)
+    {
+        for (size_t i = 0; i < WIDTH * HEIGHT * 4; i+=4)
+        {
+            pixels[i] = color.r;
+            pixels[i + 1] = color.g;
+            pixels[i + 2] = color.b;
+            pixels[i + 3] = 255;
+        }
+    }
+
+
+    int clamp(int value, int lowest, int highest)
+    {
+        if (value > highest)
+        {
+            return highest;
+        }
+        if (value < lowest)
+        {
+            return lowest;
+        }
+        return value;
+    }
+
+
+    glm::vec3 reflect_ray(glm::vec3 ray, glm::vec3 normal)
+    {
+        return 2.0f * normal * glm::dot(normal, ray) - ray;
+    }
+
+
+    std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
+    {
+        glm::vec3 center = sphere.center;
+        float radius = sphere.radius;
+        glm::vec3 OC = camera_pos - center;
+
+        float k1 = glm::dot(direction, direction);
+        float k2 = 2 * glm::dot(OC, direction);
+        float k3 = glm::dot(OC, OC) - radius * radius;
+
+        float discriminant = k2 * k2 - 4 * k1 * k3;
+        if (discriminant < 0)
+        {
+            return std::make_tuple(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity());
+        }
+
+        float t1 = (-k2 + std::sqrtf(discriminant)) / (2 * k1);
+        float t2 = (-k2 - std::sqrtf(discriminant)) / (2 * k1);
+
+        return std::make_tuple(t1, t2);
+    }
+
+
+    std::tuple<std::optional<Sphere>, float> closest_intersection(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max)
+    {
+        float closest_t = std::numeric_limits<float>::infinity();
+        std::optional<Sphere> closest_sphere;
+        for (const auto& sphere : Spheres)
+        {
+            float t1, t2;
+            std::tie(t1, t2) = intersect_ray_sphere(camera_pos, direction, sphere);
+            if (t1 > t_min && t1 < t_max && t1 < closest_t)
+            {
+                closest_t = t1;
+                closest_sphere = sphere;
+            }
+            if (t2 > t_min && t2 < t_max && t2 < closest_t)
+            {
+                closest_t = t2;
+                closest_sphere = sphere;
             }
         }
-        
-        texture.update(pixels);
+        return std::make_tuple(closest_sphere, closest_t);
+    }
 
 
-        sf::Event event;
-        while (window.pollEvent(event))
+    float compute_lighting(glm::vec3 point, glm::vec3 normal, glm::vec3 view, int specular)
+    {
+        float i = 0.0f;
+        for (const auto &light : Lights)
         {
-            if (event.type == sf::Event::Closed)
-                window.close();
-            if (event.type == sf::Event::KeyPressed)
+            if (light.type == Light::AMBIENT)
             {
-                if (event.key.code == sf::Keyboard::Escape)
+                i += light.intensity;
+            }
+            else
+            {
+                glm::vec3 light_vector;
+                float t_min = 0.01f, t_max;
+                if (light.type == Light::POINT)
                 {
-                    window.close();
+                    light_vector = light.position - point;
+                    t_max = 1;
+                }
+                else if (light.type == Light::DIRECTIONAL)
+                {
+                    light_vector = light.direction;
+                    t_max = std::numeric_limits<float>::infinity();
+                }
+
+                float shadow_t;
+                std::optional<Sphere> shadow_sphere;
+                std::tie(shadow_sphere, shadow_t) = closest_intersection(point, light_vector, t_min, t_max);
+                if (shadow_sphere.has_value())
+                {
+                    continue;
+                }
+
+                float n_dot_l = glm::dot(normal, light_vector);
+                if (n_dot_l > 0.0f)
+                {
+                    i += light.intensity * n_dot_l / (glm::length(normal) * glm::length(light_vector));
+                }
+
+                if (specular != -1)
+                {
+                    glm::vec3 R = reflect_ray(light_vector, normal);
+                    float r_dot_v = glm::dot(R, view);
+                    if (r_dot_v > 0.0f)
+                        i += light.intensity * std::powf((r_dot_v / (glm::length(R) * glm::length(view))), static_cast<float>(specular));
                 }
             }
         }
-
-        window.clear();
-        window.draw(sprite);
-        window.display();
+        return i;
     }
 
+
+    sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max, int recursion_depth)
+    {
+        float closest_t;
+        std::optional<Sphere> closest_sphere;
+        std::tie(closest_sphere, closest_t) = closest_intersection(camera_pos, direction, t_min, t_max);
+        if (!closest_sphere)
+        {
+            return sf::Color::Black;
+        }
+
+        glm::vec3 point = camera_pos + closest_t * direction;
+        glm::vec3 normal = point - closest_sphere.value().center;
+        normal = glm::normalize(normal);
+        float lighting = compute_lighting(point, normal, -direction, closest_sphere.value().specular);
+
+        sf::Color t_color = closest_sphere.value().color;
+        sf::Color local_color;
+        local_color.r = clamp(static_cast<int>(static_cast<float>(t_color.r) * lighting), 0, 255);
+        local_color.g = clamp(static_cast<int>(static_cast<float>(t_color.g) * lighting), 0, 255);
+        local_color.b = clamp(static_cast<int>(static_cast<float>(t_color.b) * lighting), 0, 255);
+
+        float reflective = closest_sphere.value().reflective;
+        if (recursion_depth <= 0 || reflective <= 0.0f)
+        {
+            return local_color;
+        }
+
+        glm::vec3 reflected_direction = reflect_ray(-direction, normal);
+        sf::Color reflected_color = trace_ray(point, reflected_direction, 0.1f, std::numeric_limits<float>::infinity(), recursion_depth - 1);
+        sf::Color result_color;
+        result_color.r = clamp(static_cast<int>(static_cast<float>(local_color.r) * (1.0f - reflective) + static_cast<float>(reflected_color.r) * reflective), 0, 255);
+        result_color.g = clamp(static_cast<int>(static_cast<float>(local_color.g) * (1.0f - reflective) + static_cast<float>(reflected_color.g) * reflective), 0, 255);
+        result_color.b = clamp(static_cast<int>(static_cast<float>(local_color.b) * (1.0f - reflective) + static_cast<float>(reflected_color.b) * reflective), 0, 255);
+
+        return result_color;
+    }
+};
+
+
+int main()
+{
+    RaytracerApp app(WINDOW_NAME, WIDTH, HEIGHT);
+    try 
+    {
+        app.run();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << "\n";
+        return 1;
+    }
     return 0;
 }
