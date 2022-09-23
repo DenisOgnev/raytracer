@@ -1,6 +1,7 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
 #include <limits>
 #include <vector>
 #include <optional>
@@ -15,6 +16,8 @@ struct Sphere
     glm::vec3 center;
     float radius;
     sf::Color color;
+    int specular;
+    float reflective;
 };
 
 struct Light
@@ -32,10 +35,10 @@ struct Light
 
 const std::vector<Sphere> Spheres
 {
-    {glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Red},
-    {glm::vec3(2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Blue},
-    {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green},
-    {glm::vec3(0.0f, -5001.0f, 0.0f), 5000.0f, sf::Color::Yellow}
+    {glm::vec3(0.0f, -1.0f, 3.0f), 1.0f, sf::Color::Red, 500, 0.2f},
+    {glm::vec3(2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Blue, 500, 0.3f},
+    {glm::vec3(-2.0f, 0.0f, 4.0f), 1.0f, sf::Color::Green, 10, 0.4f},
+    {glm::vec3(0.0f, -5001.0f, 0.0f), 5000.0f, sf::Color::Yellow, 1000, 0.5f}
 };
 const std::vector<Light> Lights
 {
@@ -83,34 +86,22 @@ void fill(sf::Uint8* pixels, sf::Color color)
     }
 }
 
-float compute_lighting(glm::vec3 point, glm::vec3 normal)
+int clamp(int value, int lowest, int highest)
 {
-    float i = 0.0f;
-    for (const auto &light : Lights)
+    if (value > highest)
     {
-        if (light.type == Light::AMBIENT)
-        {
-            i += light.intensity;
-        }
-        else
-        {
-            glm::vec3 light_vector;
-            if (light.type == Light::POINT)
-            {
-                light_vector = light.position - point;
-            }
-            else if (light.type == Light::DIRECTIONAL)
-            {
-                light_vector = light.direction;
-            }
-            float n_dot_l = glm::dot(normal, light_vector);
-            if (n_dot_l > 0.0f)
-            {
-                i += light.intensity * n_dot_l / (glm::length(normal) * glm::length(light_vector));
-            }
-        }
+        return highest;
     }
-    return i;
+    if (value < lowest)
+    {
+        return lowest;
+    }
+    return value;
+}
+
+glm::vec3 reflect_ray(glm::vec3 ray, glm::vec3 normal)
+{
+    return 2.0f * normal * glm::dot(normal, ray) - ray;
 }
 
 std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
@@ -135,7 +126,7 @@ std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 di
     return std::make_tuple(t1, t2);
 }
 
-sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max)
+std::tuple<std::optional<Sphere>, float> closest_intersection(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max)
 {
     float closest_t = std::numeric_limits<float>::infinity();
     std::optional<Sphere> closest_sphere;
@@ -154,21 +145,92 @@ sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, floa
             closest_sphere = sphere;
         }
     }
+    return std::make_tuple(closest_sphere, closest_t);
+}
+
+float compute_lighting(glm::vec3 point, glm::vec3 normal, glm::vec3 view, int specular)
+{
+    float i = 0.0f;
+    for (const auto &light : Lights)
+    {
+        if (light.type == Light::AMBIENT)
+        {
+            i += light.intensity;
+        }
+        else
+        {
+            glm::vec3 light_vector;
+            float t_min = 0.01f, t_max;
+            if (light.type == Light::POINT)
+            {
+                light_vector = light.position - point;
+                t_max = 1;
+            }
+            else if (light.type == Light::DIRECTIONAL)
+            {
+                light_vector = light.direction;
+                t_max = std::numeric_limits<float>::infinity();
+            }
+
+            float shadow_t;
+            std::optional<Sphere> shadow_sphere;
+            std::tie(shadow_sphere, shadow_t) = closest_intersection(point, light_vector, t_min, t_max);
+            if (shadow_sphere.has_value())
+            {
+                continue;
+            }
+
+            float n_dot_l = glm::dot(normal, light_vector);
+            if (n_dot_l > 0.0f)
+            {
+                i += light.intensity * n_dot_l / (glm::length(normal) * glm::length(light_vector));
+            }
+
+            if (specular != -1)
+            {
+                glm::vec3 R = reflect_ray(light_vector, normal);
+                float r_dot_v = glm::dot(R, view);
+                if (r_dot_v > 0.0f)
+                    i += light.intensity * std::powf((r_dot_v / (glm::length(R) * glm::length(view))), static_cast<float>(specular));
+            }
+        }
+    }
+    return i;
+}
+
+sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max, int recursion_depth)
+{
+    float closest_t;
+    std::optional<Sphere> closest_sphere;
+    std::tie(closest_sphere, closest_t) = closest_intersection(camera_pos, direction, t_min, t_max);
     if (!closest_sphere)
     {
-        return sf::Color::White;
+        return sf::Color::Black;
     }
 
     glm::vec3 point = camera_pos + closest_t * direction;
-    glm::vec3 normal = (point - closest_sphere.value().center);
+    glm::vec3 normal = point - closest_sphere.value().center;
     normal = glm::normalize(normal);
-    float lighting = compute_lighting(point, normal);
+    float lighting = compute_lighting(point, normal, -direction, closest_sphere.value().specular);
 
     sf::Color t_color = closest_sphere.value().color;
+    sf::Color local_color;
+    local_color.r = clamp(static_cast<int>(static_cast<float>(t_color.r) * lighting), 0, 255);
+    local_color.g = clamp(static_cast<int>(static_cast<float>(t_color.g) * lighting), 0, 255);
+    local_color.b = clamp(static_cast<int>(static_cast<float>(t_color.b) * lighting), 0, 255);
+
+    float reflective = closest_sphere.value().reflective;
+    if (recursion_depth <= 0 || reflective <= 0.0f)
+    {
+        return local_color;
+    }
+
+    glm::vec3 reflected_direction = reflect_ray(-direction, normal);
+    sf::Color reflected_color = trace_ray(point, reflected_direction, 0.1f, std::numeric_limits<float>::infinity(), recursion_depth - 1);
     sf::Color result_color;
-    result_color.r = static_cast<int>(t_color.r * lighting);
-    result_color.g = static_cast<int>(t_color.g * lighting);
-    result_color.b = static_cast<int>(t_color.b * lighting);
+    result_color.r = clamp(static_cast<int>(static_cast<float>(local_color.r) * (1.0f - reflective) + static_cast<float>(reflected_color.r) * reflective), 0, 255);
+    result_color.g = clamp(static_cast<int>(static_cast<float>(local_color.g) * (1.0f - reflective) + static_cast<float>(reflected_color.g) * reflective), 0, 255);
+    result_color.b = clamp(static_cast<int>(static_cast<float>(local_color.b) * (1.0f - reflective) + static_cast<float>(reflected_color.b) * reflective), 0, 255);
 
     return result_color;
 }
@@ -188,19 +250,27 @@ int main()
 
 
     glm::vec3 camera_pos(0.0f, 0.0f, 0.0f);
-    uint32_t viewport_width = 1;
-    uint32_t viewport_height = 1;
-    uint32_t plane_distance = 1;
-    
+    float viewport_width = 1;
+    float viewport_height = 1;
+    float plane_distance = 1;
+
+    const int32_t recursion_depth = 3;
+
+    sf::Clock clock;
 
     while (window.isOpen())
     {
+        float current_time = clock.restart().asSeconds();
+        //float fps = 1.0f / (current_time);
+
+        std::cout << current_time << "\n";
+
         for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
         {
             for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
             {
-                glm::vec3 direction(x * (viewport_width / static_cast<double>(WIDTH)), y * (viewport_height / static_cast<double>(HEIGHT)), plane_distance);
-                sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity());
+                glm::vec3 direction(x * (viewport_width / static_cast<float>(WIDTH)), y * (viewport_height / static_cast<float>(HEIGHT)), plane_distance);
+                sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity(), recursion_depth);
                 put_pixel(pixels, x, y, result_color);
             }
         }
