@@ -6,11 +6,14 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <omp.h>
 
 
 const std::string WINDOW_NAME = "Raytracer";
 const int32_t WIDTH = 500;
 const int32_t HEIGHT = 500;
+
+const glm::vec3 camera_position(0.0f, 0.0f, 0.0f);
 
 
 struct Sphere
@@ -20,6 +23,16 @@ struct Sphere
     sf::Color color;
     int specular;
     float reflective;
+    float radius_squared;
+    glm::vec3 OC;
+    float dot_oc;
+
+    Sphere(glm::vec3 _center, float _radius, sf::Color _color, int _specular, float _reflective) : center(_center), radius(_radius), color(_color), specular(_specular), reflective(_reflective)
+    {
+        radius_squared = radius * radius;
+        OC = camera_position - center;
+        dot_oc = dot(OC, OC);
+    }
 };
 
 
@@ -63,7 +76,6 @@ public:
         sprite = sf::Sprite(texture);
     }
 
-
     void run()
     {
         main_loop();
@@ -86,15 +98,13 @@ private:
     sf::Texture texture;
     sf::Sprite sprite;
 
-    glm::vec3 camera_pos = glm::vec3(0.0f, 0.0f, 0.0f);
-    float viewport_width = 1;
-    float viewport_height = 1;
-    float plane_distance = 1;
+    float viewport_width = 1.0f;
+    float viewport_height = 1.0f;
+    float plane_distance = 1.0f;
 
     const int32_t recursion_depth = 3;
 
     sf::Clock clock;
-
 
     void main_loop()
     {
@@ -103,20 +113,22 @@ private:
             float current_time = clock.restart().asSeconds();
             float fps = 1.0f / (current_time);
 
-            std::cout << current_time << "\n";
+            std::cout << "frametime: " << current_time << ", fps: " << fps << "\n";
 
+            #pragma omp parallel for
             for (int32_t x = -WIDTH / 2; x < (WIDTH + 1) / 2; x++)
             {
                 for (int32_t y = -HEIGHT / 2; y < (HEIGHT + 1) / 2; y++)
                 {
                     glm::vec3 direction(x * (viewport_width / static_cast<float>(WIDTH)), y * (viewport_height / static_cast<float>(HEIGHT)), plane_distance);
-                    sf::Color result_color = trace_ray(camera_pos, direction, 1.0f, std::numeric_limits<float>::infinity(), recursion_depth);
-                    put_pixel(pixels, x, y, result_color);
+                    sf::Color result_color = trace_ray(camera_position, direction, 1.0f, std::numeric_limits<float>::infinity(), recursion_depth);
+                    // #pragma omp critical
+                    put_pixel(x, y, result_color);
                 }
             }
             
             texture.update(pixels);
-
+            
 
             sf::Event event;
             while (window.pollEvent(event))
@@ -139,7 +151,7 @@ private:
     }
 
 
-    void put_pixel_start_from_zero(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
+    void put_pixel_start_from_zero(int32_t x, int32_t y, sf::Color color)
     {
         if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT)
         {
@@ -152,7 +164,7 @@ private:
     }
 
 
-    void put_pixel(sf::Uint8* pixels, int32_t x, int32_t y, sf::Color color)
+    void put_pixel(int32_t x, int32_t y, sf::Color color)
     {
         if (x > (WIDTH - 1) / 2 || x < -WIDTH / 2 || y > (HEIGHT - 1) / 2 || y < -HEIGHT / 2)
         {
@@ -168,7 +180,7 @@ private:
     }
 
 
-    void fill(sf::Uint8* pixels, sf::Color color)
+    void fill(sf::Color color)
     {
         for (size_t i = 0; i < WIDTH * HEIGHT * 4; i+=4)
         {
@@ -192,61 +204,47 @@ private:
         }
         return value;
     }
+    
 
-
-    glm::vec3 reflect_ray(glm::vec3 ray, glm::vec3 normal)
+    sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max, int current_depth)
     {
-        return 2.0f * normal * glm::dot(normal, ray) - ray;
-    }
-
-
-    std::tuple<float, float> intersect_ray_sphere(glm::vec3 camera_pos, glm::vec3 direction, Sphere sphere)
-    {
-        glm::vec3 center = sphere.center;
-        float radius = sphere.radius;
-        glm::vec3 OC = camera_pos - center;
-
-        float k1 = glm::dot(direction, direction);
-        float k2 = 2 * glm::dot(OC, direction);
-        float k3 = glm::dot(OC, OC) - radius * radius;
-
-        float discriminant = k2 * k2 - 4 * k1 * k3;
-        if (discriminant < 0)
-        {
-            return std::make_tuple(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity());
-        }
-
-        float t1 = (-k2 + std::sqrtf(discriminant)) / (2 * k1);
-        float t2 = (-k2 - std::sqrtf(discriminant)) / (2 * k1);
-
-        return std::make_tuple(t1, t2);
-    }
-
-
-    std::tuple<std::optional<Sphere>, float> closest_intersection(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max)
-    {
-        float closest_t = std::numeric_limits<float>::infinity();
+        float closest_t;
         std::optional<Sphere> closest_sphere;
-        for (const auto& sphere : Spheres)
+        std::tie(closest_sphere, closest_t) = closest_intersection(camera_pos, direction, t_min, t_max);
+        if (!closest_sphere)
         {
-            float t1, t2;
-            std::tie(t1, t2) = intersect_ray_sphere(camera_pos, direction, sphere);
-            if (t1 > t_min && t1 < t_max && t1 < closest_t)
-            {
-                closest_t = t1;
-                closest_sphere = sphere;
-            }
-            if (t2 > t_min && t2 < t_max && t2 < closest_t)
-            {
-                closest_t = t2;
-                closest_sphere = sphere;
-            }
+            return sf::Color::Black;
         }
-        return std::make_tuple(closest_sphere, closest_t);
+
+        glm::vec3 point = camera_pos + closest_t * direction;
+        glm::vec3 normal = point - closest_sphere.value().center;
+        normal = glm::normalize(normal);
+        float lighting = compute_lighting(point, normal, -direction, closest_sphere.value().specular);
+
+        sf::Color t_color = closest_sphere.value().color;
+        sf::Color local_color;
+        local_color.r = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(t_color.r) * lighting), 0, 255));
+        local_color.g = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(t_color.g) * lighting), 0, 255));
+        local_color.b = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(t_color.b) * lighting), 0, 255));
+
+        float reflective = closest_sphere.value().reflective;
+        if (recursion_depth <= 0 || reflective <= 0.0f)
+        {
+            return local_color;
+        }
+
+        glm::vec3 reflected_direction = reflect_ray(-direction, normal);
+        sf::Color reflected_color = trace_ray(point, reflected_direction, 0.1f, std::numeric_limits<float>::infinity(), current_depth - 1);
+        sf::Color result_color;
+        result_color.r = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(local_color.r) * (1.0f - reflective) + static_cast<float>(reflected_color.r) * reflective), 0, 255));
+        result_color.g = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(local_color.g) * (1.0f - reflective) + static_cast<float>(reflected_color.g) * reflective), 0, 255));
+        result_color.b = static_cast<sf::Uint8>(clamp(static_cast<int>(static_cast<float>(local_color.b) * (1.0f - reflective) + static_cast<float>(reflected_color.b) * reflective), 0, 255));
+
+        return result_color;
     }
 
 
-    float compute_lighting(glm::vec3 point, glm::vec3 normal, glm::vec3 view, int specular)
+    float compute_lighting(const glm::vec3 &point, const glm::vec3 &normal, const glm::vec3 &view, int specular)
     {
         float i = 0.0f;
         for (const auto &light : Lights)
@@ -258,7 +256,7 @@ private:
             else
             {
                 glm::vec3 light_vector;
-                float t_min = 0.01f, t_max;
+                float t_min = 0.1f, t_max = 0.0f;
                 if (light.type == Light::POINT)
                 {
                     light_vector = light.position - point;
@@ -297,41 +295,55 @@ private:
     }
 
 
-    sf::Color trace_ray(glm::vec3 camera_pos, glm::vec3 direction, float t_min, float t_max, int recursion_depth)
+    std::tuple<std::optional<Sphere>, float> closest_intersection(const glm::vec3 &camera_pos, const glm::vec3 &direction, float t_min, float t_max)
     {
-        float closest_t;
+        float closest_t = std::numeric_limits<float>::infinity();
         std::optional<Sphere> closest_sphere;
-        std::tie(closest_sphere, closest_t) = closest_intersection(camera_pos, direction, t_min, t_max);
-        if (!closest_sphere)
+        float k1 = glm::dot(direction, direction);
+        for (const auto& sphere : Spheres)
         {
-            return sf::Color::Black;
+            float t1, t2;
+            std::tie(t1, t2) = intersect_ray_sphere(camera_pos, direction, sphere, k1);
+            if (t1 > t_min && t1 < t_max && t1 < closest_t)
+            {
+                closest_t = t1;
+                closest_sphere = sphere;
+            }
+            if (t2 > t_min && t2 < t_max && t2 < closest_t)
+            {
+                closest_t = t2;
+                closest_sphere = sphere;
+            }
+        }
+        return std::make_tuple(closest_sphere, closest_t);
+    }
+
+
+    std::tuple<float, float> intersect_ray_sphere(const glm::vec3 &camera_pos, const glm::vec3 &direction, const Sphere &sphere, const float k1)
+    {
+        glm::vec3 center = sphere.center;
+        float radius_squared = sphere.radius_squared;
+        glm::vec3 OC = camera_pos - center;
+
+        float k2 = 2 * glm::dot(OC, direction);
+        float k3 = sphere.dot_oc - radius_squared;
+
+        float discriminant = k2 * k2 - 4 * k1 * k3;
+        if (discriminant < 0)
+        {
+            return std::make_tuple(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity());
         }
 
-        glm::vec3 point = camera_pos + closest_t * direction;
-        glm::vec3 normal = point - closest_sphere.value().center;
-        normal = glm::normalize(normal);
-        float lighting = compute_lighting(point, normal, -direction, closest_sphere.value().specular);
+        float t1 = (-k2 + std::sqrtf(discriminant)) / (2 * k1);
+        float t2 = (-k2 - std::sqrtf(discriminant)) / (2 * k1);
 
-        sf::Color t_color = closest_sphere.value().color;
-        sf::Color local_color;
-        local_color.r = clamp(static_cast<int>(static_cast<float>(t_color.r) * lighting), 0, 255);
-        local_color.g = clamp(static_cast<int>(static_cast<float>(t_color.g) * lighting), 0, 255);
-        local_color.b = clamp(static_cast<int>(static_cast<float>(t_color.b) * lighting), 0, 255);
+        return std::make_tuple(t1, t2);
+    }
 
-        float reflective = closest_sphere.value().reflective;
-        if (recursion_depth <= 0 || reflective <= 0.0f)
-        {
-            return local_color;
-        }
 
-        glm::vec3 reflected_direction = reflect_ray(-direction, normal);
-        sf::Color reflected_color = trace_ray(point, reflected_direction, 0.1f, std::numeric_limits<float>::infinity(), recursion_depth - 1);
-        sf::Color result_color;
-        result_color.r = clamp(static_cast<int>(static_cast<float>(local_color.r) * (1.0f - reflective) + static_cast<float>(reflected_color.r) * reflective), 0, 255);
-        result_color.g = clamp(static_cast<int>(static_cast<float>(local_color.g) * (1.0f - reflective) + static_cast<float>(reflected_color.g) * reflective), 0, 255);
-        result_color.b = clamp(static_cast<int>(static_cast<float>(local_color.b) * (1.0f - reflective) + static_cast<float>(reflected_color.b) * reflective), 0, 255);
-
-        return result_color;
+    glm::vec3 reflect_ray(glm::vec3 ray, glm::vec3 normal)
+    {
+        return 2.0f * normal * glm::dot(normal, ray) - ray;
     }
 };
 
