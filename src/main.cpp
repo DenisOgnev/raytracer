@@ -13,6 +13,7 @@ const std::string WINDOW_NAME = "Raytracer";
 const int32_t WIDTH = 500;
 const int32_t HEIGHT = 500;
 
+
 const glm::vec3 camera_position(0.0f, 0.0f, 0.0f);
 
 
@@ -70,20 +71,17 @@ class RaytracerApp
 public:
     RaytracerApp(std::string window_name, int32_t width, int32_t height) : WINDOW_NAME(window_name), WIDTH(width), HEIGHT(height), WINDOW_SIZE(sf::Vector2u(WIDTH, HEIGHT)), window(sf::RenderWindow(sf::VideoMode(WINDOW_SIZE), WINDOW_NAME)) 
     {
-        pixels = new sf::Uint8[WIDTH * HEIGHT * 4];
+        // pixels = new sf::Uint8[WIDTH * HEIGHT * 4];
+        pixels = std::make_unique<sf::Uint8[]>(WIDTH * HEIGHT * 4);
         if (!texture.create(WINDOW_SIZE))
             throw std::runtime_error("Failed to create texture.");
         sprite = sf::Sprite(texture);
     }
 
+
     void run()
     {
         main_loop();
-    }
-
-    ~RaytracerApp()
-    {
-        delete [] pixels;
     }
 
 
@@ -94,7 +92,7 @@ private:
     const sf::Vector2u WINDOW_SIZE;
     sf::RenderWindow window;
 
-    sf::Uint8* pixels;
+    std::unique_ptr<sf::Uint8[]> pixels;
     sf::Texture texture;
     sf::Sprite sprite;
 
@@ -105,6 +103,7 @@ private:
     const int32_t recursion_depth = 3;
 
     sf::Clock clock;
+
 
     void main_loop()
     {
@@ -127,7 +126,7 @@ private:
                 }
             }
             
-            texture.update(pixels);
+            texture.update(pixels.get());
             
 
             sf::Event event;

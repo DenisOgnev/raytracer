@@ -8,7 +8,7 @@ file(GLOB SRC
 )
 
 set(CMAKE_CXX_STANDARD 17)
-add_compile_options(/Zc:__cplusplus /W4 /WX)
+add_compile_options(/W4 /WX)
 
 add_subdirectory(3rdparty)
 
